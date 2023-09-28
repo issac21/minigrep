@@ -1,83 +1,81 @@
-use std::error::Error;
-use std::{env, fs};
+use failure::Context;
+use failure::ResultExt;
+use structopt::StructOpt;
 
+#[derive(Debug, StructOpt)]
+#[structopt(name = "minigrep", about = "A simple grep tool")]
 pub struct Config {
-    query: String,
-    filename: String,
-    is_case_sensitive: bool,
+    /// the pattern
+    pub pattern: String,
+    /// the path
+    #[structopt(parse(from_os_str))]
+    pub path: std::path::PathBuf,
+    /// case sensitive
+    #[structopt(short = "i", long)]
+    pub is_case_sensitive: bool,
 }
 
-impl Config {
-    pub fn new(mut args: env::Args) -> Result<Config, &'static str> {
-        args.next();
-        let query = match args.next() {
-            Some(s) => s,
-            None => return Err(""),
-        };
-        let filename = match args.next() {
-            Some(s) => s,
-            None => return Err(""),
-        };
-        let is_case_sensitive = env::var("CASE_INSENSITIVE").is_err();
-        Ok(Config {
-            query,
-            filename,
-            is_case_sensitive,
-        })
-    }
-}
-pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
-    let contents = fs::read_to_string(config.filename)?;
+pub fn run(config: &Config) -> Result<Vec<String>, Context<String>> {
+    let content = std::fs::read_to_string(&config.path)
+        .with_context(|_| format!("Error reading `{:?}`", &config.path))?;
+
     let result = if config.is_case_sensitive {
-        search(&config.query, &contents)
+        search(&config.pattern, &content)
     } else {
-        search_case_insensitive(&config.query, &contents)
+        search_case_insensitive(&config.pattern, &content)
     };
-    for line in result {
-        println!("{}", line);
-    }
-    Ok(())
+    Ok(result)
 }
 
-fn search<'a>(query: &'_ str, contents: &'a str) -> Vec<&'a str> {
-    contents
-        .lines()
-        .filter(|line| line.contains(query))
-        .collect()
-}
-
-fn search_case_insensitive<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {
-    let query = query.to_lowercase();
-    let mut results = Vec::new();
-    for line in contents.lines() {
-        if line.to_lowercase().contains(&query) {
-            results.push(line);
+fn search(pattern: &str, content: &str) -> Vec<String> {
+    let mut result = Vec::new();
+    for line in content.lines() {
+        if line.contains(pattern) {
+            result.push(line.into());
         }
     }
-    results
+    result
 }
 
-mod tests {
-    use crate::{search, search_case_insensitive};
+fn search_case_insensitive(pattern: &str, content: &str) -> Vec<String> {
+    let pattern = pattern.to_lowercase();
+    let mut result = Vec::new();
+    for line in content.lines() {
+        if line.to_lowercase().contains(&pattern) {
+            result.push(line.into());
+        }
+    }
+    result
+}
 
-    const TEXT: &str = "\
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn search_case_insensitive() {
+        let pattern = "duct";
+        let content = "\
 Rust:
 safe, fast, productive.
 Pick three.
 Duct tape.";
-
-    #[test]
-    fn test_case_sensitive() {
-        let query = "duct";
-        assert_eq!(vec!["safe, fast, productive."], search(query, TEXT));
+        assert_eq!(
+            vec!["safe, fast, productive.", "Duct tape."],
+            super::search_case_insensitive(pattern, content)
+        );
     }
 
     #[test]
-    fn test_case_insensitive() {
-        let query = "du";
+    fn search_case_sensitive() {
+        let pattern = "duct";
+        let content = "\
+Rust:
+safe, fast, productive.
+Pick three.
+Duct tape.";
         assert_eq!(
-            vec!["safe, fast, productive.", "Duct tape."],
-            search_case_insensitive(query, TEXT)
+            vec!["safe, fast, productive."],
+            super::search(pattern, content)
         );
     }
 }

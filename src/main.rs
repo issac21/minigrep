@@ -1,14 +1,18 @@
-pub mod test;
+use exitfailure::ExitFailure;
+use failure::ResultExt;
 use minigrep::{run, Config};
-use std::{env, process};
+use structopt::StructOpt;
 
-fn main() {
-    let config = Config::new(env::args()).unwrap_or_else(|err| {
-        eprintln!("Problem parsing arguments: {}", err);
-        process::exit(1);
-    });
-    if let Err(e) = run(config) {
-        eprintln!("Application error: {}", e);
-        process::exit(1);
+fn main() -> Result<(), ExitFailure> {
+    let args = Config::from_args();
+    println!(
+        "pattern: {}, path: {:?}, is_case_sensitive:{:?}",
+        &args.pattern, &args.path, &args.is_case_sensitive
+    );
+    let result: Vec<String> =
+        run(&args).with_context(|_| format!("Error running `{:?}`", &args.path))?;
+    for line in result {
+        println!("{}", line);
     }
+    Ok(())
 }
